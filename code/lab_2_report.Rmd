@@ -1,0 +1,170 @@
+---
+title: "Estimating the Impact of Eating Habits on Obesity"
+author: "Chris DeMaio, Hope Huang, Zukang Yang"
+date: "`r Sys.Date()`"
+output: pdf_document 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE)
+if(!require(data.table)){
+    install.packages(c('data.table', 'here', 'tidyverse', 'magrittr',
+                       'sandwich', 'stargazer', 'ggpubr'))
+}
+
+library(tidyverse)
+library(here)
+library(ggplot2)
+library(data.table)
+library(magrittr)
+library(sandwich)
+library(stargazer)
+library(ggpubr)
+```
+
+```{r load data}
+obesity <- read.csv("./data/final/obesity_confirm.csv") %>%
+  mutate(
+    Gender = factor(Gender),
+    family_history_with_overweight = factor(family_history_with_overweight),
+    high_cal_consum = factor(high_cal_consum),
+    food_between_meals = factor(food_between_meals, levels=c("No", "Sometimes", "Frequently")),
+    water_consum = factor(water_consum),
+    alcohol_consum = factor(alcohol_consum),
+  )
+```
+
+## Introduction
+Obesity is a significant public health concern. It is associated with an elevated risk of multiple adverse health outcomes, including heart disease, stroke, type 2 diabetes, and certain cancers. Obesity also has sizable economic and social implications. Studies show that medical costs for people with obesity in the U.S. tend to be 30% to 40% higher than those for people without obesity^[Public Health Considerations Regarding Obesity. StatPearls, 2022, https://www.ncbi.nlm.nih.gov/books/NBK572122/.]. Poor dietary habits constitute a primary contributor to obesity and a body of research consistently reveals that diets high in calories, saturated fat, and added sugars are strongly linked to heightened obesity risk. Consequently, gaining a deeper comprehension of the connection between eating habits and obesity can empower individuals to make more informed decisions regarding their dietary and lifestyle choices.
+
+This study investigates the influence of some eating habits on individual's obesity levels while accounting for demographic characteristics such as gender, age, and family history of obesity. Leveraging a set of regression models based on data about respondents’ dietary habits and demographic information, we estimate the changes in BMI(body mass index) and ultimately gather insights about the dietary habits that significantly influence the likelihood of obesity.
+
+## Data and Methodology
+Our study is based on a dataset comprising 2,111 instances, obtained from a research study^[Fabio Mendoza Palechor, Alexis de la Hoz Manotas,
+Dataset for estimation of obesity levels based on eating habits and physical condition in individuals from Colombia, Peru and Mexico, 2019, https://doi.org/10.1016/j.dib.2019.104344.] aimed at estimating obesity levels in individuals from Mexico, Peru, and Colombia. The dataset is publicly available through the UCI Machine Learning Repository. Each row of the data represents an individual from the countries mentioned earlier, with ages between 14 and 61, and contains information about their eating habits, physical conditions, and demographics. The data was collected in 2019 using a web-based survey platform. We performed all exploration and model building on a 30% subsample of the data. The remaining 70%, totaling 1,479 rows, were used to generate the statistics in this report. 
+
+We consider several key eating habits as independent variables, including frequent consumption of high-caloric food, number of main meals, frequency of eating between meals, and water consumption. Our selection of these variables is based on observed statistically significant correlations with obesity during the exploratory process. Additionally, to operationalize obesity, we utilize the commonly used BMI metric which is calculated by dividing weight by height squared. It is a widely accepted measure of an individual's fitness. Due to its simple and cost-effective nature, BMI is commonly employed by medical professionals to assess obesity levels.
+
+For example, one of the main variables we are examining is if individual's who frequently consume high-caloric food influences their BMI. We can see from figure 1 that in both male and females, the regression lines for those who  consume high-caloric food are higher than those who do not. We also observe that BMI and Age do not have a straightforward relationship. Though, we do notice that females have a sizable cluster of data between 40 and 50 BMI and 20 and 25 years old and males do not. This indicates there could be a difference in average BMI between males and females. 
+
+Our exploratory analysis on the subsample indicates that several readily available variables associated with physical conditions, such as smoking and frequency of physical activities, do not exhibit statistically significant correlations, nor do they influence the direction and magnitude of the variables of interest. Although such variables are potential confounding factors that require careful consideration in our models, our results suggest that their exclusion would be appropriate, possibly due to data quality issues. As such, we removed them from our analysis.
+
+Our primary interest is exploring the relationship between eating habits and obesity levels. To this end, we developed large-sample linear regression models incorporating dietary and demographic variables. Specifically, we created a base model that included only eating habits, an extended model that incorporated demographic characteristics, and a full model that added a new variable, $R \cdot (drinking \ alcohol)$, to the analysis. We chose to include $R \cdot (drinking \ alcohol)$ despite not initially considering it a significant contributor to obesity, as we lacked sufficient evidence to exclude it from our analysis. Therefore, we fitted regressions of the form, 
+
+\begin{align*}
+\widehat{BMI}=\beta_0 + \beta_1\cdot R \cdot (high\ calorie\ consumption) + \beta_2 \cdot (number\ of\ meals) + \\ \beta_3\cdot R \cdot (frequency\ of\ food\ between\ meals) + \beta_4 \cdot R \cdot (water \ consumption \ above \ 2L) + \mathbf{Z\gamma}
+\end{align*}
+
+where R is an indicator for the categorical eating habit variables, $\beta_1$, $\beta_2$, $\beta_3$, and $\beta_1$ represent the respective effect of the eating habit variables on BMI. $\mathbf{Z}$ is a row vector of additional covariates, and $\mathbf{\gamma}$ is a column vector of coefficients. By fitting these 3 models, we measure how the estimated coefficients and robust standard errors to the key variables change across the models. This helps us assess how these variables are affected by endogeneity bias.
+
+```{r figure_1, echo=FALSE, fig.width=6, fig.height=3, fig.cap = "BMI vs. Age by Gender"}
+#split sets by gender for plots
+confirm_set_female <- obesity %>%
+  filter(Gender == 'Female')
+
+confirm_set_male <- obesity %>%
+  filter(Gender == 'Male')
+
+
+female_plt <- ggplot(confirm_set_female, aes(y=BMI, x=Age, colour=high_cal_consum)) +
+  geom_point(shape=16, size=1.2, alpha=0.75) +
+  geom_smooth(se=FALSE) +
+  ggtitle("Female") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values=c('#FFBC79', '#1170AA'),
+                     name = "Frequently Consumes High Caloric Food", 
+                     guide = guide_legend(reverse=TRUE),
+                     labels = c("No", "Yes"))
+
+male_plt <- ggplot(confirm_set_male, aes(y=BMI, x=Age, colour=high_cal_consum)) +
+  geom_point(shape=16, size=1.2, alpha=0.75) +
+  geom_smooth(se=FALSE) +
+  ggtitle("Male") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values=c('#FFBC79', '#1170AA'),
+                     name = "Frequently Consumes High Caloric Food", 
+                     guide = guide_legend(reverse=TRUE),
+                     labels = c("No", "Yes"))
+
+ggarrange(male_plt, female_plt, ncol=2, common.legend=TRUE, legend="bottom")
+```
+
+## Results
+```{r fit models, include=FALSE, warning=FALSE}
+m_minimal  <- lm(BMI ~ high_cal_consum + num_main_meals + food_between_meals + 
+                   water_consum, data=obesity)
+
+m_habit_demographics <- lm(BMI ~ high_cal_consum + num_main_meals +
+       food_between_meals + water_consum + Gender + Age + # I(Age**2) +
+         family_history_with_overweight, data=obesity)
+
+se_minimal <- m_minimal %>% 
+  vcovHC(type = "HC1") %>% 
+  diag() %>% 
+  sqrt()
+
+se_habit_demo <- m_habit_demographics %>% 
+  vcovHC(type = "HC1") %>% 
+  diag() %>% 
+  sqrt()
+
+m_full <- lm(BMI ~ high_cal_consum + num_main_meals +
+       food_between_meals + water_consum + Gender + Age + #I(Age**2) +
+         family_history_with_overweight + alcohol_consum, data=obesity)
+
+se_full <- m_full %>% 
+  vcovHC(type = "HC1") %>% 
+  diag() %>% 
+  sqrt()
+
+summary(m_full)
+```
+
+```{r display regression table, message=FALSE, echo=FALSE, results='asis'}
+stargazer(
+  m_minimal, m_habit_demographics, m_full, 
+  type = 'latex', 
+  se = list(se_minimal,se_habit_demo,se_full),
+  header=FALSE,
+  title = "Estimated Regressions",
+  dep.var.caption  = "Output Variable: BMI (Body Mass Index)",
+  dep.var.labels   = "",
+  star.cutoffs = c(0.05, 0.01, 0.001),
+  covariate.labels = c("$R \\cdot (high\\ calorie\\ consumption)$", 
+                       "number of main meals", 
+                       "$R \\cdot (food\\ between\\ meals - sometimes)$", 
+                       "$R \\cdot (food\\ between\\ meals - frequent)$", 
+                       "$R \\cdot (water\\ consumption\\ above\\ 2L)$",
+                       "$R \\cdot (male)$", 
+                       "age",
+                       "$R \\cdot (with\\ family\\ obesity\\ history)$", 
+                       "$R \\cdot (drinking\\ alcohol)$", 
+                       "Constant"),
+  omit.stat=c("rsq"), 
+  digits=2,
+  notes.append = FALSE,
+  notes = "\\parbox[t]{7cm}{$HC_1$ robust standard errors in parentheses.}"
+)
+```
+
+Table 1 shows the results of our analysis. Overall, across 3 models, some variables exhibit significance with relatively consistent estimated coefficients. This suggests that the inclusion of new variables does not significantly alter the influence of existing variables in the models on the dependent variable, or at most, affects them to a minor extent. However, some other variables, such as $R \cdot (food\ between\ meals - frequent)$, present noticeable changes in their estimated coefficients. We suspect that the uncertainty in estimation is influenced by some omitted variables.
+
+Specifically, The results show that across all models, the key coefficient on $R \cdot (high\ calorie\ consumption)$ is highly statistically significant, with point estimates ranging from `r min(m_minimal$coef[2], m_habit_demographics$coef[2], m_full$coef[2]) %>% sprintf(fmt = '%#.2f')` to `r max(m_minimal$coef[2], m_habit_demographics$coef[2], m_full$coef[2]) %>% sprintf(fmt = '%#.2f')`. To put this into perspective, our findings indicate that individuals with high-calorie consumption habits, given similar demographic characteristics and other eating habits will, on average, have an increase in BMI of `r m_full$coef[2] %>% sprintf(fmt = '%#.2f')`, as suggested by model 3.  
+
+Moreover, the analysis also highlights that the key coefficient on $R \cdot (daily\ water\ consumption\ above\ 2L)$ is statistically significant across all models, with point estimates ranging from `r min(m_minimal$coef[6], m_habit_demographics$coef[6], m_full$coef[6]) %>% sprintf(fmt = '%#.2f')` to `r max(m_minimal$coef[6], m_habit_demographics$coef[6], m_full$coef[6]) %>% sprintf(fmt = '%#.2f')`. This implies that respondents who drank over 2L water a day had a reduction in BMI by `r abs(m_full$coef[6]) %>% sprintf(fmt = '%#.2f')`, as model 3 suggests. 
+
+However, our findings also indicate that the coefficients on the two indicator variables derived from $frequency\ of\ food\ between\ meals$ did not present an interpretable pattern. Specifically, the coefficients on $R \cdot (food\ between\ meals - sometimes)$ are not all significant, with model 2 showing insignificance after including demographic variables, but significance in model 3 after including $R \cdot (drinking\ alcohol)$. Additionally, all models' coefficients on $R \cdot (food\ between\ meals - frequent)$ are statistically significant. However, their negative values make it difficult to interpret the effect of this variable in conjunction with that of $R \cdot (food\ between\ meals - sometimes)$. For instance, respondents who frequently ate between meals had less BMI, while those who sometimes ate between meals tended to have much higher BMI. We require further investigation to understand the reason behind this counter-intuitive finding.
+
+Interestingly, $number\ of\ main\ meals$ became insignificant in model 3 after introducing $drinking\ alcohol$. Our study did not initially consider alcohol consumption as a contributing factor to obesity level, but our analysis shows that $drinking\ alcohol$ is statistically significant and increases the adjusted $R^2$ by a considerable margin. However, the interaction between $number\ of\ main\ meals$ and $drinking \ alcohol$ remains a mystery and requires further investigation. 
+
+## Limitations
+Ensuring consistent regression estimates requires that observations are independently and identically distributed (iid). Nevertheless, our data was collected using a web platform with a survey where anonymous users from Mexico, Peru, and Colombia responded to each question, which may result in geographical clustering. As such, the data might not originate from the same distribution. Additionally, as the data did not label the country to which each user belonged, we could not account for the mixed effect between the country of origin and eating habits. Moreover, it is worth noting that a significant portion, up to 77% of the data utilized in our data were generated synthetically by the original study through the application of the SMOTE^[N.V. Chawla, K.W. Bowyer, L.O. Hall, W.P. Kegelmeyer
+SMOTE: synthetic minority over-sampling technique, 2002, https://www.jair.org/index.php/jair/article/view/10302.] technique on the initial 23% of the data. The synthetic data further violates the iid assumption for large sample regression as they depend on the initial data from which they were generated. 
+
+The accuracy of our study may be restricted by our dependent variable, because the BMI fails to account for various pertinent attributes, such as differences in bone density, muscle mass, and sex. For instance, an individual who identifies as male and possesses above-average muscle mass, but below-average height, may register a BMI score exceeding 30, despite maintaining a healthy physique.
+
+As far as structural limitations, several omitted variables may bias the estimates. An example variable that may interact with the key variables in the true model is stress level. We expect a positive correlation between stress level and the key variables if high stress influences one to consume more high-calorie food. Since stress level likely positively affects BMI, there is a positive omitted variable bias on the key variables. Therefore, the omitted variable bias is away from zero. This makes the hypothesis test overconfident.
+
+## Conclusion
+Based on our findings, we should encourage individuals to avoid frequently consuming high-caloric food, drink more than 2L of water a day, and avoid drinking alcohol. However, this is only a single study and it only serves to provide some guidance for future research. The aim of this study is to examine which eating habits have significant influence on an individual's BMI so people with higher BMI's know where they should focus their efforts to becoming healthier. 
+
